@@ -43,7 +43,7 @@ while get_next_frame():
     #cv2.waitKey()
 
     shape = img.shape[:2]
-    print(shape[0]*shape[1])
+#    print(shape[0]*shape[1])
 
     chosenContour = contours[0]
     for contour in contours:
@@ -51,7 +51,7 @@ while get_next_frame():
             chosenContour = contour
 
     edgeBounds = cv2.boundingRect(chosenContour)
-    print(cv2.contourArea(chosenContour))
+#    print(cv2.contourArea(chosenContour))
     #cv2.rectangle(copy, edgeBounds[:2], (edgeBounds[0]+edgeBounds[2], edgeBounds[1]+edgeBounds[3]), (0, 0, 255), 5)
 
     bound = edgeBounds[0] + edgeBounds[2]
@@ -87,7 +87,7 @@ while get_next_frame():
     #cv2.waitKey()
 
     circles = cv2.HoughCircles(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), cv2.HOUGH_GRADIENT, 2, 50)
-    print(circles)
+    #print(circles)
 #    img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
     circles = np.uint16(np.around(circles))

@@ -3,7 +3,11 @@ import cv2
 import numpy as np
 import argparse
 import imutils
+from math import sqrt
 from imutils.perspective import four_point_transform
+from skimage.feature import peak_local_max
+from skimage.morphology import watershed
+from scipy import ndimage
 
 ap = argparse.ArgumentParser()
 ap.add_argument("-f", required=True, help="video path")
@@ -26,95 +30,58 @@ def get_next_frame():
     succ, img = video.read()
     return succ
 
-def order_points(pts):
-    rect = np.zeros((4, 2), dtype = "float32")
+def distance_between(point1, point2):
+    return sqrt(abs(point1[0]-point2[0])**2+abs(point1[1]-point2[1])**2)
 
-    s = pts.sum(axis = 1)
-    rect[0] = pts[np.argmin(s)]
-    rect[2] = pts[np.argmax(s)]
-
-    diff = np.diff(pts, axis = 1)
-    rect[1] = pts[np.argmin(diff)]
-    rect[3] = pts[np.argmax(diff)]
-
-    return rect
-
+establishedCenter = None
 frameData = {}
 
 while get_next_frame():
 
-    lowerWhite = np.array([200, 200, 200])
-    upperWhite = np.array([255, 255, 255])
+    oimg = img.copy()
 
-    mask = cv2.inRange(img, lowerWhite, upperWhite)
+    lowerRed = np.array([0, 150, 150])
+    upperRed = np.array([5, 255, 255])
 
-    thresh = cv2.threshold(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
+    mask = cv2.inRange(cv2.cvtColor(img, cv2.COLOR_BGR2HSV), lowerRed, upperRed)
 
-    ret, contours, hierarchy = cv2.findContours(thresh.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    lowerRed = np.array([170, 120, 120])
+    upperRed = np.array([180, 255, 255])
 
-    copy = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+    #we need two red ranges because red hue is split in hsv
 
-    cv2.drawContours(copy, contours, -1, (0, 255, 0), 5)
-    #cv2.imshow("mask", imutils.resize(copy, height=300))
+    mask += cv2.inRange(cv2.cvtColor(img, cv2.COLOR_BGR2HSV), lowerRed, upperRed)
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    mask = cv2.dilate(mask, kernel, iterations = 20)
+
+    ret, contours, hierarchy = cv2.findContours(mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    copy = cv2.cvtColor(mask.copy(), cv2.COLOR_GRAY2BGR)
+    cv2.drawContours(copy, contours, -1, (0, 255, 0), 1)
+    #cv2.imshow("copy", copy)
     #cv2.waitKey()
 
-    shape = img.shape[:2]
-#    print(shape[0]*shape[1])
-
-    chosenContour = contours[0]
-    for contour in contours:
-        if cv2.contourArea(contour) > cv2.contourArea(chosenContour) and cv2.contourArea(contour) < (shape[0] * shape[1] * 0.4):
-            chosenContour = contour
-
-    edgeBounds = cv2.boundingRect(chosenContour)
-#    print(cv2.contourArea(chosenContour))
-    #cv2.rectangle(copy, edgeBounds[:2], (edgeBounds[0]+edgeBounds[2], edgeBounds[1]+edgeBounds[3]), (0, 0, 255), 5)
-
-    bound = edgeBounds[0] + edgeBounds[2]
-
-    height, width = img.shape[:2]
-    img = img[0:height, bound:width]
-    oimg = img
-
-    custom = cv2.GaussianBlur(img, (5, 5), 0)
-    custom = cv2.addWeighted(img, 1.5, custom, -0.5, 0)
-
-#    cv2.imshow("mask", imutils.resize(img, height=300))
-#    cv2.waitKey()
-#    cv2.imshow("mask", imutils.resize(custom, height=300))
-#    cv2.waitKey()
-
-    img = custom
-
-    circles = cv2.HoughCircles(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), cv2.HOUGH_GRADIENT, 2, 30, param1=80)
-    #print(circles)
-#    img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-
-    maxRadius = 65
-
-    trueCircles = []
-
-    circles = np.uint16(np.around(circles))
-    for i in circles[0,:]:
-        # draw the outer circle
-        if i[2] <= maxRadius:
-            if (i[0] > 450 and i[0] < 500) or (i[0] < 1050 and i[0] > 1000):
-                cv2.circle(img,(i[0],i[1]),i[2],(0,255,0),5)
-                trueCircles.append(((i[0], i[1]), i[2]))
-                # draw the center of the circle
-                cv2.circle(img,(i[0],i[1]),2,(0,0,255),3)
-            else:
-                cv2.circle(img,(i[0],i[1]),i[2],(0,255,255),3)
-
-    #cv2.imshow("mask", imutils.resize(img, height=300))
-    #cv2.waitKey()
-
-    if len(trueCircles) != 4:
+    if len(contours) < 4:
         frameData[index] = None
+        print("could not locate at frame %d" % index)
     else:
         centers = []
-        for circle in trueCircles:
-            centers.append(circle[0])
+        contures = []
+        for contour in contours:
+            circle = cv2.minEnclosingCircle(contour)
+            for i, conture in enumerate(contures):
+                circul = cv2.minEnclosingCircle(conture)
+                if distance_between(circul[0], circle[0]) < 200:
+                    combinedContour = np.vstack([contour, conture])
+                    combinedContour = cv2.convexHull(combinedContour)
+                    contures[i] = combinedContour
+                    break
+            else:
+                contures.append(contour)
+        for conture in contures:
+            centers.append(cv2.minEnclosingCircle(conture)[0])
+
 
         img = four_point_transform(oimg, np.asarray(centers))
         thresh = cv2.threshold(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
@@ -127,27 +94,71 @@ while get_next_frame():
         chosenContour = contours[0]
         for contour in contours:
             if cv2.contourArea(contour) > cv2.contourArea(chosenContour):
-                chosenContour = contour
+                rect = cv2.boundingRect(contour)
+                shape = img.shape[:2]
+                if rect[0]>shape[1]*0.2 and rect[1]>shape[0]*0.2 and rect[0]+rect[2]<shape[1]*0.8 and rect[1]+rect[3]<shape[0]*0.8:
+                    #just making sure that its in the middle of the frame
+                    chosenContour = contour
 
-        cv2.drawContours(img, [chosenContour], -1, (0, 255, 0), 2)
-        frameData[index] = cv2.boundingRect(chosenContour)[2]
+        #cv2.drawContours(img, [chosenContour], -1, (0, 255, 0), 2)
+        # length, width, area, area/length, area/width
         x, y, w, h = cv2.boundingRect(chosenContour)
-        cv2.rectangle(img, (x, y), (x+w, y+h), (0, 0, 255), 2)
+        #cv2.rectangle(img, (x, y), (x+w, y+h), (0, 0, 255), 2)
+        a = cv2.contourArea(chosenContour)
+        frameData[index] = {'l': w, 'w': h, 'a': a, 'al': a/w, 'aw': a/h}
 
-        cv2.imshow("mask", img)
+        shifted = cv2.pyrMeanShiftFiltering(img, 21, 51)
+        #cv2.imshow("mask", cv2.resize(shifted, (440, 300)))
+        #cv2.waitKey()
+
+        lowerBrown = np.array([3, 40, 0])
+        upperBrown = np.array([15, 170, 200])
+
+        thresh = cv2.inRange(cv2.cvtColor(shifted, cv2.COLOR_BGR2HSV), lowerBrown, upperBrown)
+        cv2.imshow("mask", cv2.resize(thresh, (440, 300)))
+
+        dee = ndimage.distance_transform_edt(thresh)
+        localMax = peak_local_max(dee, indices = False, min_distance = 20, labels = thresh)
+
+        markers = ndimage.label(localMax, structure = np.ones((3, 3)))[0]
+        labels = watershed(-1 * dee, markers, mask = thresh)
+        print("found %d segments" % (len(np.unique(labels)) - 1))
+        #subtracting 1 for the background
+        #cv2.imshow("Thresh", thresh)
+
+        for label in np.unique(labels):
+            if label == 0:
+                #this means that its the background, so we ignore it
+                continue
+
+            mask = np.zeros(thresh.shape, dtype="uint8")
+            mask[labels == label] = 255
+
+            cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+            c = cnts[0]
+            for cnt in cnts:
+                if cv2.contourArea(cnt) > cv2.contourArea(c):
+                    c = cnt
+            cv2.drawContours(img, [c], -1, (0, 255, 0), 2)
+
+        cv2.imshow("mask", cv2.resize(img, (440, 300)))
         cv2.waitKey()
 
     print(" ", index, end='\r')
     index += 1
 
-#print()
-#print("{")
-#for i in range(0, max(frameData.keys())):
-#    if not i in frameData.keys():
-#        continue
-#    if frameData[i] != None:
-#        print("  {%d, %d}," % (i, frameData[i]))
-#print("}")
+#metric output stuff
+for i in range(0, max(frameData.keys())):
+    if not i in frameData.keys():
+        continue
+    if frameData[i] != None:
+        for k in frameData[i].keys():
+            outFileName = "data_" + k
+            outFullFilePath = filePath + outFileName
+            outFile = open(outFullFilePath, 'a')
+            outFile.write("{%d, %f},\n" % (i, frameData[i][k]))
+            outFile.close()
+
 
 
 

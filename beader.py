@@ -33,7 +33,6 @@ def get_next_frame():
 def distance_between(point1, point2):
     return sqrt(abs(point1[0]-point2[0])**2+abs(point1[1]-point2[1])**2)
 
-establishedCenter = None
 frameData = {}
 
 while get_next_frame():
@@ -57,8 +56,8 @@ while get_next_frame():
 
     ret, contours, hierarchy = cv2.findContours(mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-    copy = cv2.cvtColor(mask.copy(), cv2.COLOR_GRAY2BGR)
-    cv2.drawContours(copy, contours, -1, (0, 255, 0), 1)
+    #copy = cv2.cvtColor(mask.copy(), cv2.COLOR_GRAY2BGR)
+    #cv2.drawContours(copy, contours, -1, (0, 255, 0), 1)
     #cv2.imshow("copy", copy)
     #cv2.waitKey()
 
@@ -122,6 +121,7 @@ while get_next_frame():
 
         markers = ndimage.label(localMax, structure = np.ones((3, 3)))[0]
         labels = watershed(-1 * dee, markers, mask = thresh)
+        print("frame %d - " % index, end='')
         print("found %d segments" % (len(np.unique(labels)) - 1))
         #subtracting 1 for the background
         #cv2.imshow("Thresh", thresh)
@@ -134,17 +134,17 @@ while get_next_frame():
             mask = np.zeros(thresh.shape, dtype="uint8")
             mask[labels == label] = 255
 
-            cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+            cnts = cv2.findContours(mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[-2]
             c = cnts[0]
             for cnt in cnts:
                 if cv2.contourArea(cnt) > cv2.contourArea(c):
                     c = cnt
             cv2.drawContours(img, [c], -1, (0, 255, 0), 2)
+            #find the biggest contour in the selection and show its borders
 
         cv2.imshow("mask", cv2.resize(img, (440, 300)))
         cv2.waitKey()
 
-    print(" ", index, end='\r')
     index += 1
 
 #metric output stuff

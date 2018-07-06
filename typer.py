@@ -44,8 +44,10 @@ for line in open(file).read().split('\n'):
     if len(line) > 0:
         mm, fc = line[1:-2].split(', ')
 
-        enter()
+        #write(mm)
+        #tab()
         write(fc)
+        enter()
 
 
 
